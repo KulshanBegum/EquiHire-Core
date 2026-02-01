@@ -170,6 +170,23 @@ The connection is established.
 
 ---
 
+## 🔌 API Reference
+
+### 🏢 Organization Management
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| **POST** | `/api/organizations` | Registers a new organization and its admin recruiter. Requires `OrganizationRequest` body. |
+| **GET** | `/api/me/organization` | Retrieves organization details for the logged-in user. Query param: `userId`. |
+| **PUT** | `/api/organization` | Updates organization details (Industry/Size). Requires `OrganizationResponse` body. |
+
+### 📩 Interview Invitations
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| **POST** | `/api/invitations` | Creates a magic link invitation for a candidate. Triggers an email via SMTP. |
+| **GET** | `/api/invitations/validate/{token}` | Validates a candidate's magic link token. Checks expiration (7 days) and usage status. |
+
+---
+
 ## ⚡ Getting Started
 
 ### Prerequisites

@@ -7,7 +7,7 @@ import { Clock, Mail } from "lucide-react";
 export default function InterviewScheduler() {
     const { state } = useAuthContext();
     const [organization, setOrganization] = useState<{ id: string; name: string } | null>(null);
-    const [history, setHistory] = useState([
+    const [history] = useState([
         { id: 1, email: "sarah.j@gmail.com", role: "Senior Backend Eng", time: "2 mins ago", status: "sent" },
         { id: 2, email: "david.c@protonmail.com", role: "Frontend Dev", time: "1 hour ago", status: "delivered" },
         { id: 3, email: "alex.m@yahoo.com", role: "DevOps", time: "Yesterday", status: "opened" },

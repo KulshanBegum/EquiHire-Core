@@ -4,25 +4,24 @@ import ballerina/jwt;
 import ballerina/websocket;
 
 // --- Configuration ---
-configurable string pythonServiceUrl = "http://localhost:8000";
+configurable string pythonServiceUrl = ?;
 // Asgardeo Configuration
-configurable string asgardeoOrgUrl = "https://api.asgardeo.io/t/yourorg";
-configurable string asgardeoJwksUrl = "https://api.asgardeo.io/t/yourorg/oauth2/jwks";
-configurable string asgardeoTokenAudience = "EquiHire-Core"; // This should match your Client ID
+configurable string asgardeoOrgUrl = ?;
+configurable string asgardeoJwksUrl = ?;
+configurable string asgardeoTokenAudience = ?;
 
 // --- Clients ---
 final http:Client pythonClient = check new (pythonServiceUrl);
 
 // --- State Management ---
 // in-memory store for active frontend clients
-// Note: api.bal cannot access this easily if it's not public or shared. 
-// For this single-module project, specific access control might apply, 
-// but 'map' at module level is visible in the module.
 map<websocket:Caller> webClients = {};
 
 // --- Service Definition ---
 
 // 1. WebSocket Service for Twilio Media Streams (Public)
+# WebSocket service to handle Twilio Media Streams.
+# transcribes audio using a Python AI service and broadcasts text to the frontend.
 service /streams on new websocket:Listener(9090) {
 
     resource function get .(http:Request req) returns websocket:Service|websocket:UpgradeError {
@@ -89,6 +88,8 @@ jwt:ValidatorConfig jwtValidatorConfig = {
     }
 };
 
+# WebSocket service for the Dashboard Frontend.
+# Secured with Asgardeo JWT validation.
 service /dashboard on dashboardListener {
 
     resource function get .(http:Request req) returns websocket:Service|websocket:UpgradeError {
