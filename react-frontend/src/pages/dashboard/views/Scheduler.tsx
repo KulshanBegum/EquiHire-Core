@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuthContext } from "@asgardeo/auth-react";
+import { API } from "@/lib/api";
 import InviteCandidate from '../InviteCandidate';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Clock, Mail } from "lucide-react";
@@ -17,9 +18,8 @@ export default function InterviewScheduler() {
         const fetchOrg = async () => {
             if (state.sub) {
                 try {
-                    const response = await fetch(`http://localhost:9092/api/me/organization?userId=${state.sub}`);
-                    if (response.ok) {
-                        const data = await response.json();
+                    const data = await API.getOrganization(state.sub);
+                    if (data) {
                         setOrganization(data);
                     }
                 } catch (error) {

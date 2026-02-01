@@ -1,10 +1,8 @@
 import ballerina/email;
 import ballerina/http;
 import ballerina/io;
-import ballerina/sql;
 import ballerina/time;
 import ballerina/uuid;
-import ballerinax/postgresql;
 
 import equihire/gateway.database;
 import equihire/gateway.email as emailUtils;
@@ -14,7 +12,7 @@ import equihire/gateway.types;
 
 // --- Configuration ---
 
-configurable types:DatabaseConfig database = ?;
+configurable types:SupabaseConfig supabase = ?;
 configurable string frontendUrl = ?;
 
 // SMTP Configuration
@@ -34,7 +32,7 @@ final email:SmtpClient smtpClient = check new (
     security = email:START_TLS_AUTO
 );
 
-final postgresql:Client dbClient = check database:initClient(database);
+final database:Repository dbClient = check new (supabase);
 
 // --- HTTP Service for API (Port 9092) ---
 listener http:Listener apiListener = new (9092);
@@ -53,30 +51,28 @@ service /api on apiListener {
     resource function post organizations(@http:Payload types:OrganizationRequest payload) returns http:Created|error {
         io:println("NEW ORGANIZATION REGISTRATION REQUEST RECEIVED");
 
-        // Transaction to ensure both Organization and Recruiter are created, or neither
-        transaction {
-            // 1. Insert Organization
-            string orgId = check database:createOrganization(dbClient, payload.name, payload.industry, payload.size);
+        // 1. Insert Organization
+        string orgId = check dbClient->createOrganization(payload.name, payload.industry, payload.size);
 
-            io:println("Organization Created: ", orgId);
+        io:println("Organization Created: ", orgId);
 
-            // 2. Insert Recruiter (User) linked to Organization
-            check database:createRecruiter(dbClient, payload.userId, payload.userEmail, orgId);
-
-            // Transaction auto-commits at the end of the block if successful
-            check commit;
-        }
+        // 2. Insert Recruiter (User) linked to Organization
+        check dbClient->createRecruiter(payload.userId, payload.userEmail, orgId);
 
         return http:CREATED;
     }
 
     resource function get me/organization(string userId) returns types:OrganizationResponse|http:NotFound|error {
-        return database:getOrganizationByUser(dbClient, userId);
+        types:OrganizationResponse|error org = dbClient->getOrganizationByUser(userId);
+        if org is error {
+            return http:NOT_FOUND;
+        }
+        return org;
     }
 
     resource function put organization(@http:Payload types:OrganizationResponse payload, string userId) returns http:Ok|http:Forbidden|error {
         // Security check: Ensure the user belongs to this organization
-        boolean|error belongs = database:checkUserInOrganization(dbClient, userId, payload.id);
+        boolean|error belongs = dbClient->checkUserInOrganization(userId, payload.id);
         if belongs is error {
             return belongs;
         }
@@ -84,7 +80,7 @@ service /api on apiListener {
             return http:FORBIDDEN;
         }
 
-        error? updateResult = database:updateOrganization(dbClient, payload.id, payload.industry, payload.size);
+        error? updateResult = dbClient->updateOrganization(payload.id, payload.industry, payload.size);
         if updateResult is error {
             return error("Failed to update organization");
         }
@@ -98,15 +94,11 @@ service /api on apiListener {
         io:println("NEW INTERVIEW INVITATION REQUEST");
 
         // 1. Resolve Recruiter ID
-        string|sql:NoRowsError|sql:Error recruiterIdResult = database:getRecruiterId(dbClient, payload.recruiterId);
+        string|error recruiterIdResult = dbClient->getRecruiterId(payload.recruiterId);
 
-        if recruiterIdResult is sql:NoRowsError {
-            io:println("Recruiter not found for User ID: ", payload.recruiterId);
-            return error("Recruiter profile not found. Please log in again.");
-        }
-        if recruiterIdResult is sql:Error {
+        if recruiterIdResult is error {
             io:println("Database error looking up recruiter: ", recruiterIdResult.message());
-            return http:INTERNAL_SERVER_ERROR;
+            return error("Recruiter profile not found. Please log in again.");
         }
 
         string realRecruiterId = <string>recruiterIdResult;
@@ -120,8 +112,7 @@ service /api on apiListener {
         string expiresAt = time:utcToString(expirationTime);
 
         // Insert invitation
-        string|error invitationId = database:createInvitation(
-                dbClient,
+        string|error invitationId = dbClient->createInvitation(
                 token,
                 payload.candidateEmail,
                 payload.candidateName,
@@ -171,14 +162,10 @@ service /api on apiListener {
         io:println("Validating token:", token);
 
         // Query invitation by token
-        database:InvitationRecord|sql:NoRowsError|sql:Error result = database:getInvitationByToken(dbClient, token);
+        database:InvitationRecord|error result = dbClient->getInvitationByToken(token);
 
-        if result is sql:NoRowsError {
+        if result is error {
             return http:NOT_FOUND;
-        }
-
-        if result is sql:Error {
-            return error("Database error during token validation");
         }
 
         // Check if already used
@@ -205,7 +192,7 @@ service /api on apiListener {
         decimal timeDiff = time:utcDiffSeconds(currentTime, expirationTime);
         if timeDiff > 0d {
             // Update status to expired
-            _ = check database:expireInvitation(dbClient, result.id);
+            _ = check dbClient->expireInvitation(result.id);
 
             return {
                 valid: false,
@@ -216,7 +203,7 @@ service /api on apiListener {
         // Mark as used
         time:Utc usedTime = time:utcNow();
         string usedAtStr = time:utcToString(usedTime);
-        _ = check database:acceptInvitation(dbClient, result.id, usedAtStr);
+        _ = check dbClient->acceptInvitation(result.id, usedAtStr);
 
         io:println("Token validated successfully for:", result.candidate_email);
 

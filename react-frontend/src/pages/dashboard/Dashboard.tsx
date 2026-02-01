@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuthContext } from "@asgardeo/auth-react";
+import { API } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EquiHireLogo, DashboardIcon, SessionIcon, IntegrationIcon } from "@/components/ui/Icons";
@@ -48,9 +49,8 @@ export default function Dashboard() {
         const fetchOrg = async () => {
             if (state.sub) {
                 try {
-                    const response = await fetch(`http://localhost:9092/api/me/organization?userId=${state.sub}`);
-                    if (response.ok) {
-                        const data = await response.json();
+                    const data = await API.getOrganization(state.sub);
+                    if (data) {
                         setOrganization(data);
                         setEditForm({ industry: data.industry, size: data.size });
                     }
@@ -66,11 +66,7 @@ export default function Dashboard() {
         if (!organization || !state.sub) return;
         setIsSaving(true);
         try {
-            const response = await fetch(`http://localhost:9092/api/organization?userId=${state.sub}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...organization, ...editForm })
-            });
+            const response = await API.updateOrganization(organization.id, editForm, state.sub);
 
             if (response.ok) {
                 setOrganization({ ...organization, ...editForm });

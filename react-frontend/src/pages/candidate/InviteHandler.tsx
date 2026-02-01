@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { EquiHireLogo } from "@/components/ui/Icons";
 import { Loader2, XCircle, CheckCircle } from "lucide-react";
+import { API } from "@/lib/api";
 
 export default function InviteHandler() {
     const [status, setStatus] = useState<'validating' | 'success' | 'error'>('validating');
@@ -19,21 +20,7 @@ export default function InviteHandler() {
             }
 
             try {
-                const response = await fetch(`http://localhost:9092/api/invitations/validate/${token}`);
-
-                if (response.status === 404) {
-                    setStatus('error');
-                    setErrorMessage('This invitation link is invalid or does not exist.');
-                    return;
-                }
-
-                if (!response.ok) {
-                    setStatus('error');
-                    setErrorMessage('Failed to validate invitation. Please try again.');
-                    return;
-                }
-
-                const data = await response.json();
+                const data = await API.validateInvitation(token);
 
                 if (!data.valid) {
                     setStatus('error');
@@ -58,8 +45,10 @@ export default function InviteHandler() {
 
             } catch (error) {
                 console.error('Validation error:', error);
+
+                // Handle different error types if needed, for now generic
                 setStatus('error');
-                setErrorMessage('Network error. Please check your connection and try again.');
+                setErrorMessage('This invitation link is invalid or does not exist.');
             }
         };
 

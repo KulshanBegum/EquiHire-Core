@@ -1,4 +1,5 @@
 import { useAuthContext } from "@asgardeo/auth-react";
+import { API } from './lib/api';
 import LandingPage from './pages/landing/Landing';
 import Dashboard from './pages/dashboard/Dashboard';
 import CandidateWelcome from './pages/candidate/Welcome';
@@ -33,8 +34,8 @@ function App() {
       if (state.isAuthenticated && state.sub) {
         setCheckingOrg(true);
         try {
-          const response = await fetch(`http://localhost:9092/api/me/organization?userId=${state.sub}`);
-          if (response.ok) {
+          const orgData = await API.getOrganization(state.sub);
+          if (orgData) {
             setHasOrg(true);
           } else {
             setHasOrg(false);

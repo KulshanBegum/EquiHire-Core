@@ -76,17 +76,11 @@ public type TokenValidationResponse record {
     string? message?;
 };
 
-# Database connection configuration.
+# Supabase connection configuration.
 #
-# + host - Database host
-# + port - Database port
-# + user - Database user
-# + password - Database password
-# + name - Database name
-public type DatabaseConfig record {
-    string host;
-    int port;
-    string user;
-    string password;
-    string name;
+# + url - Supabase URL
+# + key - Supabase API Key (Anon or Service Role)
+public type SupabaseConfig record {
+    string url;
+    string key;
 };

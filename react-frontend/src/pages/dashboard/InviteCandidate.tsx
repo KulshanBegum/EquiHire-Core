@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Mail, Send, CheckCircle, Copy, AlertCircle } from "lucide-react";
 import { useAuthContext } from "@asgardeo/auth-react";
+import { API } from "@/lib/api";
 
 interface InviteCandidateProps {
     organizationId?: string;
@@ -47,19 +48,7 @@ export default function InviteCandidate({ organizationId }: InviteCandidateProps
                 recruiterId: state.sub
             };
 
-            const response = await fetch('http://localhost:9092/api/invitations', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to send invitation');
-            }
-
-            const data = await response.json();
+            const data = await API.createInvitation(payload);
             setMagicLink(data.magicLink);
 
             // Clear form

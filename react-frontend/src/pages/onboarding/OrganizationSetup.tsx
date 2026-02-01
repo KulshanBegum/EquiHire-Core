@@ -12,6 +12,7 @@ interface OrganizationSetupProps {
 }
 
 import { useAuthContext } from "@asgardeo/auth-react";
+import { API } from "@/lib/api";
 
 export default function OrganizationSetup({ onComplete }: OrganizationSetupProps) {
     const { state } = useAuthContext();
@@ -25,18 +26,12 @@ export default function OrganizationSetup({ onComplete }: OrganizationSetupProps
 
         setIsLoading(true);
         try {
-            const response = await fetch('http://localhost:9092/api/organizations', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    name: orgName,
-                    industry,
-                    size,
-                    userEmail: state.email,
-                    userId: state.sub // Use the 'sub' claim as the User ID
-                }),
+            const response = await API.createOrganization({
+                name: orgName,
+                industry,
+                size,
+                userEmail: state.email || "",
+                userId: state.sub || ""
             });
 
             if (response.ok) {

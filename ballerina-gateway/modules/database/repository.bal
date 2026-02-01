@@ -1,155 +1,7 @@
-import ballerina/sql;
-import ballerinax/postgresql;
+import ballerina/http;
 
-import equihire/gateway.types; // Import types module
+import equihire/gateway.types;
 
-// --- Database Client ---
-// We keep the client here.
-// In a larger app, you might inject this client into the functions.
-
-# Initializes the database client.
-#
-# + config - Database configuration
-# + return - The initialized client or an error
-public function initClient(types:DatabaseConfig config) returns postgresql:Client|error {
-    return new (
-        host = config.host,
-        username = config.user,
-        password = config.password,
-        database = config.name,
-        port = config.port
-    );
-}
-
-// --- Repository Functions ---
-
-# Creates a new organization in the database.
-#
-# + dbClient - Database client
-# + name - Organization name
-# + industry - Industry
-# + size - Organization size
-# + return - The ID of the created organization or an error
-public function createOrganization(postgresql:Client dbClient, string name, string industry, string size) returns string|error {
-    sql:ParameterizedQuery query = `INSERT INTO organizations (name, industry, size) 
-                                     VALUES (${name}, ${industry}, ${size}) 
-                                     RETURNING id`;
-    return dbClient->queryRow(query);
-}
-
-# Creates a new recruiter (admin) for an organization.
-#
-# + dbClient - Database client
-# + userId - User ID (UUID)
-# + email - User email
-# + organizationId - Organization ID (UUID)
-# + return - Error if failed, else nil
-public function createRecruiter(postgresql:Client dbClient, string userId, string email, string organizationId) returns error? {
-    sql:ParameterizedQuery query = `INSERT INTO recruiters (user_id, email, organization_id, role) 
-                                                   VALUES (${userId}::uuid, ${email}, ${organizationId}::uuid, 'admin')`;
-    _ = check dbClient->execute(query);
-    return;
-}
-
-# Retrieves organization details for a given user.
-#
-# + dbClient - Database client
-# + userId - The user ID
-# + return - Organization details or NotFound/Error
-public function getOrganizationByUser(postgresql:Client dbClient, string userId) returns types:OrganizationResponse|sql:NoRowsError|sql:Error {
-    sql:ParameterizedQuery query = `SELECT o.id, o.name, o.industry, o.size 
-                                    FROM organizations o
-                                    JOIN recruiters r ON o.id = r.organization_id
-                                    WHERE r.user_id = ${userId}::uuid`;
-    return dbClient->queryRow(query);
-}
-
-# Checks if a user belongs to an organization.
-#
-# + dbClient - Database client
-# + userId - User ID
-# + organizationId - Organization ID
-# + return - True if belongs, false otherwise (or error)
-public function checkUserInOrganization(postgresql:Client dbClient, string userId, string organizationId) returns boolean|error {
-    sql:ParameterizedQuery checkQuery = `SELECT 1 FROM recruiters 
-                                          WHERE user_id = ${userId}::uuid AND organization_id = ${organizationId}::uuid`;
-    int|sql:Error|sql:NoRowsError checkResult = dbClient->queryRow(checkQuery);
-
-    if checkResult is sql:NoRowsError {
-        return false;
-    }
-    if checkResult is error {
-        return checkResult;
-    }
-    return true;
-}
-
-# Updates an organization's details.
-#
-# + dbClient - Database client
-# + organizationId - Organization ID
-# + industry - New industry
-# + size - New size
-# + return - Error if failed
-public function updateOrganization(postgresql:Client dbClient, string organizationId, string industry, string size) returns error? {
-    sql:ParameterizedQuery updateQuery = `UPDATE organizations 
-                                           SET industry = ${industry}, size = ${size}
-                                           WHERE id = ${organizationId}::uuid`;
-    _ = check dbClient->execute(updateQuery);
-    return;
-}
-
-# Gets recruiter ID by User ID.
-#
-# + dbClient - Database client
-# + userId - User ID
-# + return - Recruiter ID or NoRowsError/Error
-public function getRecruiterId(postgresql:Client dbClient, string userId) returns string|sql:NoRowsError|sql:Error {
-    sql:ParameterizedQuery query = `SELECT id FROM recruiters WHERE user_id = ${userId}::uuid`;
-    return dbClient->queryRow(query);
-}
-
-# Creates an interview invitation.
-#
-# + dbClient - Database client
-# + token - Unique token
-# + candidateEmail - Candidate email
-# + candidateName - Candidate name
-# + jobTitle - Job title
-# + recruiterId - Recruiter ID (UUID)
-# + organizationId - Organization ID (UUID)
-# + interviewDate - Interview date (or null)
-# + expiresAt - Expiration timestamp
-# + return - Invitation ID or error
-public function createInvitation(postgresql:Client dbClient, string token, string candidateEmail, string candidateName, string jobTitle, string recruiterId, string organizationId, string? interviewDate, string expiresAt) returns string|error {
-    sql:ParameterizedQuery insertQuery = `
-        INSERT INTO interview_invitations 
-        (token, candidate_email, candidate_name, recruiter_id, organization_id, job_title, interview_date, expires_at, status) 
-        VALUES (
-            ${token}, 
-            ${candidateEmail}, 
-            ${candidateName}, 
-            ${recruiterId}::uuid, 
-            ${organizationId}::uuid, 
-            ${jobTitle}, 
-            ${interviewDate}::timestamp with time zone, 
-            ${expiresAt}::timestamp with time zone, 
-            'pending'
-        ) 
-        RETURNING id`;
-    return dbClient->queryRow(insertQuery);
-}
-
-# Retrieves invitation by token.
-#
-# + id - Invitation ID
-# + candidate_email - Candidate's email
-# + candidate_name - Candidate's name
-# + job_title - Job title
-# + organization_id - Organization ID
-# + expires_at - Expiration timestamp
-# + used_at - Used timestamp (optional)
-# + status - Invitation status
 public type InvitationRecord record {
     string id;
     string candidate_email;
@@ -161,43 +13,294 @@ public type InvitationRecord record {
     string status;
 };
 
-# Gets invitation details by token.
-#
-# + dbClient - Database client
-# + token - Invitation token
-# + return - Invitation details or error
-public function getInvitationByToken(postgresql:Client dbClient, string token) returns InvitationRecord|sql:NoRowsError|sql:Error {
-    sql:ParameterizedQuery query = `
-        SELECT 
-            id, candidate_email, candidate_name, job_title, organization_id, 
-            expires_at, used_at, status 
-        FROM interview_invitations 
-        WHERE token = ${token}`;
-    return dbClient->queryRow(query);
-}
+# Client to interact with Supabase Database via REST API.
+public client class Repository {
+    final http:Client httpClient;
+    final string apiKey;
+    final map<string|string[]> headers;
 
-# Marks invitation as expired.
-#
-# + dbClient - Database client
-# + id - Invitation ID
-# + return - Error if failed
-public function expireInvitation(postgresql:Client dbClient, string id) returns error? {
-    sql:ParameterizedQuery updateQuery = `UPDATE interview_invitations SET status = 'expired' WHERE id = ${id}::uuid`;
-    _ = check dbClient->execute(updateQuery);
-    return;
-}
+    # Initializes the repository client.
+    #
+    # + config - Supabase configuration
+    # + return - Error if initialization fails
+    public function init(types:SupabaseConfig config) returns error? {
+        self.httpClient = check new (config.url);
+        self.apiKey = config.key;
+        self.headers = {
+            "apikey": config.key,
+            "Authorization": "Bearer " + config.key,
+            "Prefer": "return=representation"
+        };
+    }
 
-# Marks invitation as accepted/used.
-#
-# + dbClient - Database client
-# + id - Invitation ID
-# + usedAt - Used At timestamp string
-# + return - Error if failed
-public function acceptInvitation(postgresql:Client dbClient, string id, string usedAt) returns error? {
-    sql:ParameterizedQuery updateQuery = `
-        UPDATE interview_invitations 
-        SET used_at = ${usedAt}::timestamp with time zone, status = 'accepted' 
-        WHERE id = ${id}::uuid`;
-    _ = check dbClient->execute(updateQuery);
-    return;
+    # Creates a new organization.
+    #
+    # + name - Organization name
+    # + industry - Industry
+    # + size - Organization size
+    # + return - The ID of the created organization or an error
+    remote function createOrganization(string name, string industry, string size) returns string|error {
+        json payload = {
+            "name": name,
+            "industry": industry,
+            "size": size
+        };
+
+        http:Response response = check self.httpClient->post("/rest/v1/organizations", payload, headers = self.headers);
+
+        if response.statusCode >= 300 {
+            json errorBody = check response.getJsonPayload();
+            return error("Supabase Error: " + errorBody.toString());
+        }
+
+        json body = check response.getJsonPayload();
+        json[] organizations = <json[]>body;
+        if organizations.length() > 0 {
+            map<json> org = <map<json>>organizations[0];
+            return org["id"].toString();
+        }
+        return error("Failed to create organization: No data returned");
+    }
+
+    # Creates a new recruiter (admin) for an organization.
+    #
+    # + userId - User ID (UUID)
+    # + email - User email
+    # + organizationId - Organization ID (UUID)
+    # + return - Error if failed, else nil
+    remote function createRecruiter(string userId, string email, string organizationId) returns error? {
+        json payload = {
+            "user_id": userId,
+            "email": email,
+            "organization_id": organizationId,
+            "role": "admin"
+        };
+
+        http:Response response = check self.httpClient->post("/rest/v1/recruiters", payload, headers = self.headers);
+
+        if response.statusCode >= 300 {
+            json errorBody = check response.getJsonPayload();
+            return error("Supabase Error: " + errorBody.toString());
+        }
+        return;
+    }
+
+    # Retrieves organization details for a given user.
+    #
+    # + userId - The user ID
+    # + return - Organization details or Error
+    remote function getOrganizationByUser(string userId) returns types:OrganizationResponse|error {
+        // Step 1: Get Organization ID from Recruiter table
+        string pathSub = string `/rest/v1/recruiters?select=organization_id&user_id=eq.${userId}`;
+        http:Response responseSub = check self.httpClient->get(pathSub, headers = self.headers, targetType = http:Response);
+
+        if responseSub.statusCode >= 300 {
+            return error("Supabase check failed: " + responseSub.statusCode.toString());
+        }
+
+        json bodySub = check responseSub.getJsonPayload();
+        json[] resultsSub = <json[]>bodySub;
+
+        if resultsSub.length() == 0 {
+            return error("Organization not found for user: " + userId);
+        }
+
+        map<json> recruiterData = <map<json>>resultsSub[0];
+        string orgId = recruiterData["organization_id"].toString();
+
+        // Step 2: Get Organization Details
+        string pathOrg = string `/rest/v1/organizations?id=eq.${orgId}`;
+        http:Response responseOrg = check self.httpClient->get(pathOrg, headers = self.headers, targetType = http:Response);
+
+        if responseOrg.statusCode >= 300 {
+            return error("Supabase check failed: " + responseOrg.statusCode.toString());
+        }
+
+        json bodyOrg = check responseOrg.getJsonPayload();
+        json[] resultsOrg = <json[]>bodyOrg;
+
+        if resultsOrg.length() == 0 {
+            return error("Organization record missing for ID: " + orgId);
+        }
+
+        map<json> orgData = <map<json>>resultsOrg[0];
+
+        return {
+            id: orgData["id"].toString(),
+            name: orgData["name"].toString(),
+            industry: orgData["industry"].toString(),
+            size: orgData["size"].toString()
+        };
+    }
+
+    # Checks if a user belongs to an organization.
+    #
+    # + userId - User ID
+    # + organizationId - Organization ID
+    # + return - True if belongs, false otherwise (or error)
+    remote function checkUserInOrganization(string userId, string organizationId) returns boolean|error {
+        string path = string `/rest/v1/recruiters?user_id=eq.${userId}&organization_id=eq.${organizationId}&select=user_id`;
+        http:Response response = check self.httpClient->get(path, headers = self.headers, targetType = http:Response);
+
+        if response.statusCode >= 300 {
+            return error("Supabase check failed: " + response.statusCode.toString());
+        }
+
+        json body = check response.getJsonPayload();
+        json[] results = <json[]>body;
+        return results.length() > 0;
+    }
+
+    # Updates an organization's details.
+    #
+    # + organizationId - Organization ID
+    # + industry - New industry
+    # + size - New size
+    # + return - Error if failed
+    remote function updateOrganization(string organizationId, string industry, string size) returns error? {
+        json payload = {
+            "industry": industry,
+            "size": size
+        };
+        string path = string `/rest/v1/organizations?id=eq.${organizationId}`;
+        http:Response response = check self.httpClient->patch(path, payload, headers = self.headers, targetType = http:Response);
+
+        if response.statusCode >= 300 {
+            json errorBody = check response.getJsonPayload();
+            return error("Supabase Error: " + errorBody.toString());
+        }
+        return;
+    }
+
+    # Gets recruiter ID by User ID.
+    #
+    # + userId - User ID
+    # + return - Recruiter ID or Error
+    remote function getRecruiterId(string userId) returns string|error {
+        string path = string `/rest/v1/recruiters?select=id&user_id=eq.${userId}`;
+        http:Response response = check self.httpClient->get(path, headers = self.headers, targetType = http:Response);
+
+        if response.statusCode >= 300 {
+            json errorBody = check response.getJsonPayload();
+            return error("Supabase Error: " + errorBody.toString());
+        }
+
+        json body = check response.getJsonPayload();
+        json[] results = <json[]>body;
+
+        if results.length() == 0 {
+            return error("Recruiter not found");
+        }
+        map<json> recruiter = <map<json>>results[0];
+        return recruiter["id"].toString();
+    }
+
+    # Creates an interview invitation.
+    #
+    # + token - Unique token
+    # + candidateEmail - Candidate email
+    # + candidateName - Candidate name
+    # + jobTitle - Job title
+    # + recruiterId - Recruiter ID (UUID)
+    # + organizationId - Organization ID (UUID)
+    # + interviewDate - Interview date (or null)
+    # + expiresAt - Expiration timestamp
+    # + return - Invitation ID or error
+    remote function createInvitation(string token, string candidateEmail, string candidateName, string jobTitle, string recruiterId, string organizationId, string? interviewDate, string expiresAt) returns string|error {
+        json payload = {
+            "token": token,
+            "candidate_email": candidateEmail,
+            "candidate_name": candidateName,
+            "recruiter_id": recruiterId,
+            "organization_id": organizationId,
+            "job_title": jobTitle,
+            "interview_date": interviewDate,
+            "expires_at": expiresAt,
+            "status": "pending"
+        };
+
+        http:Response response = check self.httpClient->post("/rest/v1/interview_invitations", payload, headers = self.headers);
+
+        if response.statusCode >= 300 {
+            json errorBody = check response.getJsonPayload();
+            return error("Supabase Error: " + errorBody.toString());
+        }
+
+        json body = check response.getJsonPayload();
+        json[] invitations = <json[]>body;
+        if invitations.length() > 0 {
+            map<json> inv = <map<json>>invitations[0];
+            return inv["id"].toString();
+        }
+        return error("Failed to create invitation");
+    }
+
+    # Gets invitation details by token.
+    #
+    # + token - Invitation token
+    # + return - Invitation details or error
+    remote function getInvitationByToken(string token) returns InvitationRecord|error {
+        string path = string `/rest/v1/interview_invitations?token=eq.${token}`;
+        http:Response response = check self.httpClient->get(path, headers = self.headers, targetType = http:Response);
+
+        if response.statusCode >= 300 {
+            json errorBody = check response.getJsonPayload();
+            return error("Supabase Error: " + errorBody.toString());
+        }
+
+        json body = check response.getJsonPayload();
+        json[] results = <json[]>body;
+
+        if results.length() == 0 {
+            return error("Invitation not found");
+        }
+
+        map<json> data = <map<json>>results[0];
+        InvitationRecord inv = {
+            id: data["id"].toString(),
+            candidate_email: data["candidate_email"].toString(),
+            candidate_name: data["candidate_name"] is () ? () : data["candidate_name"].toString(),
+            job_title: data["job_title"] is () ? () : data["job_title"].toString(),
+            organization_id: data["organization_id"].toString(),
+            expires_at: data["expires_at"].toString(),
+            used_at: data["used_at"] is () ? () : data["used_at"].toString(),
+            status: data["status"].toString()
+        };
+        return inv;
+    }
+
+    # Marks invitation as expired.
+    #
+    # + id - Invitation ID
+    # + return - Error if failed
+    remote function expireInvitation(string id) returns error? {
+        json payload = {"status": "expired"};
+        string path = string `/rest/v1/interview_invitations?id=eq.${id}`;
+        http:Response response = check self.httpClient->patch(path, payload, headers = self.headers, targetType = http:Response);
+
+        if response.statusCode >= 300 {
+            return error("Supabase Error: " + response.statusCode.toString());
+        }
+        return;
+    }
+
+    # Marks invitation as accepted/used.
+    #
+    # + id - Invitation ID
+    # + usedAt - Used At timestamp string
+    # + return - Error if failed
+    remote function acceptInvitation(string id, string usedAt) returns error? {
+        json payload = {
+            "used_at": usedAt,
+            "status": "accepted"
+        };
+        string path = string `/rest/v1/interview_invitations?id=eq.${id}`;
+        http:Response response = check self.httpClient->patch(path, payload, headers = self.headers, targetType = http:Response);
+
+        if response.statusCode >= 300 {
+            return error("Supabase Error: " + response.statusCode.toString());
+        }
+        return;
+    }
+
 }
