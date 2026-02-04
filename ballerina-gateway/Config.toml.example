@@ -1,4 +1,6 @@
 pythonServiceUrl = "http://localhost:8000"
+openAIKey = "sk-proj-..."
+
 asgardeoTokenAudience = "EquiHire-Core"
 frontendUrl = "http://localhost:5173"
 asgardeoOrgUrl = "https://api.asgardeo.io/t/***********/oauth2/token"
