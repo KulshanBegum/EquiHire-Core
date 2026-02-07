@@ -259,6 +259,44 @@ service /api on apiListener {
         return response;
     }
 
+    // 4. Evaluate Answer (Gemini Proxy)
+    resource function post evaluate(@http:Payload types:EvaluationRequest payload) returns types:EvaluationResponse|http:InternalServerError|error {
+        io:println("Evaluation request received");
+
+        // Proxy to Python Service
+        // Note: Field names match because we used camelCase in Ballerina and snake_case in Python is handled by standard mapping or Manual.
+        // Actually, Ballerina -> Python JSON keeps keys as is. Python expects snake_case.
+        // We need to map camelCase (Ballerina) -> snake_case (Python) manually.
+
+        json pythonPayload = {
+            "candidate_answer": payload.candidateAnswer,
+            "question": payload.question,
+            "model_answer": payload.modelAnswer,
+            "experience_level": payload.experienceLevel,
+            "strictness": payload.strictness
+        };
+
+        json|error response = pythonClient->post("/evaluate", pythonPayload);
+
+        if response is error {
+            io:println("Error calling Python Evaluate: ", response.message());
+            return http:INTERNAL_SERVER_ERROR;
+        }
+
+        // Map snake_case (Python) -> camelCase (Ballerina Response)
+        // Python: { redacted_answer, score, feedback, pii_detected }
+        // Ballerina: { redactedAnswer, score, feedback, piiDetected }
+
+        map<json> respMap = <map<json>>response;
+
+        return {
+            redactedAnswer: <string>respMap["redacted_answer"],
+            score: <decimal>respMap["score"],
+            feedback: <string>respMap["feedback"],
+            piiDetected: <boolean>respMap["pii_detected"]
+        };
+    }
+
     // --- Magic Link Invitation Endpoints ---
 
     resource function post invitations(@http:Payload types:InvitationRequest payload) returns types:InvitationResponse|http:InternalServerError|error {
