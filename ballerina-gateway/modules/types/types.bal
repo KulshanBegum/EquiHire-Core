@@ -147,7 +147,6 @@ public type JobRequest record {
     string title;
     string description;
     string[] requiredSkills;
-    string[] screeningQuestions;
     string organizationId;
     string recruiterId;
 };
@@ -185,4 +184,30 @@ public type EvaluationResponse record {
     decimal score;
     string feedback;
     boolean piiDetected;
+};
+
+
+
+# Represents the bulk request for job questions.
+#
+# + questions - List of individual question objects
+public type QuestionPayload record {
+    QuestionItem[] questions;
+};
+
+# Represents an individual screening question.
+#
+# + jobId - ID of the linked job
+# + organizationId - ID of the organization
+# + questionText - The actual question string
+# + questionType - Type of input (text, etc.)
+# + orderIndex - Sequence order
+# + isRequired - Whether candidate must answer
+public type QuestionItem record {
+    string jobId;
+    string organizationId;
+    string questionText;
+    string questionType;
+    int orderIndex;
+    boolean isRequired;
 };

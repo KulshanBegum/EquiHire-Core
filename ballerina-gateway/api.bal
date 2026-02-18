@@ -110,33 +110,50 @@ service /api on apiListener {
     }
 
     resource function post jobs(@http:Payload types:JobRequest payload) returns types:JobResponse|http:InternalServerError|error {
-        io:println("NEW JOB CREATION REQUEST");
-
-        // Resolve Recruiter ID from User ID (payload.recruiterId contains the User ID from the frontend)
         string|error recruiterIdResult = dbClient->getRecruiterId(payload.recruiterId);
-
         if recruiterIdResult is error {
-            io:println("Error resolving Recruiter ID: ", recruiterIdResult.message());
-            return error("Recruiter profile not found for user: " + payload.recruiterId);
+            return error("Recruiter profile not found");
         }
 
         string realRecruiterId = <string>recruiterIdResult;
 
+        // Correct call: title, description, requiredSkills (string[]), organizationId, recruiterId
         string|error jobId = dbClient->createJob(
             payload.title,
             payload.description,
-            payload.requiredSkills,
-            payload.screeningQuestions,
-            payload.organizationId,
-            realRecruiterId
+            payload.requiredSkills, // This is a string[]
+            payload.organizationId, // This is a string
+            realRecruiterId         // This is a string
         );
 
         if jobId is error {
-            io:println("Error creating job: ", jobId.message());
             return http:INTERNAL_SERVER_ERROR;
         }
 
         return {id: jobId};
+    }
+
+    # Saves screening questions for a specific job in bulk to the new structured table.
+    # 
+    # + payload - List of questions with their metadata
+    # + return - Created status or error
+    resource function post jobs/questions(@http:Payload types:QuestionPayload payload) returns http:Created|http:InternalServerError|error {
+        foreach var q in payload.questions {
+            // Using '->' because createJobQuestion is a remote function
+            error? result = dbClient->createJobQuestion(
+                q.jobId,
+                q.organizationId,
+                q.questionText,
+                q.questionType,
+                q.orderIndex,
+                q.isRequired
+            );
+
+            if result is error {
+                return http:INTERNAL_SERVER_ERROR;
+            }
+        }
+        return http:CREATED;
     }
 
     # Retrieves all jobs for the authenticated recruiter.
