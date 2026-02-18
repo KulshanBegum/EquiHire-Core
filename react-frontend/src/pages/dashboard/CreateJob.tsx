@@ -77,10 +77,52 @@ export default function CreateJob({ organizationId, onJobCreated }: CreateJobPro
         setScreeningQuestions(screeningQuestions.filter((_, i) => i !== index));
     };
 
+    // const handleCreateJob = async () => {
+    //     setError('');
+    //     setSuccess('');
+
+    //     if (!title || !description || skills.length === 0) {
+    //         setError('Please fill in required fields and add at least one skill.');
+    //         return;
+    //     }
+
+    //     if (!organizationId || !state.sub) {
+    //         setError('Organization or recruiter information missing.');
+    //         return;
+    //     }
+
+    //     setIsLoading(true);
+
+    //     try {
+    //         const payload = {
+    //             title,
+    //             description,
+    //             requiredSkills: skills,
+    //             screeningQuestions: screeningQuestions,
+    //             organizationId,
+    //             recruiterId: state.sub
+    //         };
+
+    //         await API.createJob(payload);
+    //         setSuccess('Job created successfully!');
+    //         setTitle('');
+    //         setDescription('');
+    //         setSkills([]);
+    //         setScreeningQuestions([]);
+    //         if (onJobCreated) onJobCreated();
+    //     } catch (err) {
+    //         console.error(err);
+    //         setError('Failed to create job.');
+    //     } finally {
+    //         setIsLoading(false);
+    //     }
+    // };
+
     const handleCreateJob = async () => {
         setError('');
         setSuccess('');
 
+        // Basic Validation
         if (!title || !description || skills.length === 0) {
             setError('Please fill in required fields and add at least one skill.');
             return;
@@ -94,30 +136,48 @@ export default function CreateJob({ organizationId, onJobCreated }: CreateJobPro
         setIsLoading(true);
 
         try {
-            const payload = {
+            // STEP 1: Create the Job Role (No questions in this payload)
+            const jobPayload = {
                 title,
                 description,
                 requiredSkills: skills,
-                screeningQuestions: screeningQuestions,
                 organizationId,
                 recruiterId: state.sub
+                // screeningQuestions is removed from here!
             };
 
-            await API.createJob(payload);
-            setSuccess('Job created successfully!');
+            const createdJob = await API.createJob(jobPayload);
+
+            // STEP 2: Send Questions to the new dedicated table
+            if (screeningQuestions.length > 0 && createdJob?.id) {
+                const questionsPayload = screeningQuestions.map((q, index) => ({
+                    jobId: createdJob.id,
+                    organizationId: organizationId,
+                    questionText: q,
+                    questionType: 'text',
+                    orderIndex: index,
+                    isRequired: true
+                }));
+
+                await API.createJobQuestions(questionsPayload);
+            }
+
+            setSuccess('Job and screening questions created successfully!');
+
+            // Reset Form
             setTitle('');
             setDescription('');
             setSkills([]);
             setScreeningQuestions([]);
             if (onJobCreated) onJobCreated();
-        } catch (err) {
+
+        } catch (err: any) {
             console.error(err);
-            setError('Failed to create job.');
+            setError(err.message || 'Failed to create job.');
         } finally {
             setIsLoading(false);
         }
     };
-
     return (
         <Card className="shadow-lg mb-8 border-t-4 border-t-[#FF7300]">
             <CardHeader>

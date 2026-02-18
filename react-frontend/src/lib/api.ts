@@ -61,6 +61,16 @@ export const API = {
         return response.json();
     },
 
+    createJobQuestions: async (questions: any[]) => {
+        const response = await fetch(`${API_BASE_url}/jobs/questions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ questions }),
+        });
+        if (!response.ok) throw new Error("Failed to save screening questions");
+        return response.json();
+    },
+
     getJobs: async (userId: string) => {
         const response = await fetch(`${API_BASE_url}/jobs?userId=${userId}`);
         if (!response.ok) throw new Error("Failed to fetch jobs");

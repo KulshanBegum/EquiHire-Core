@@ -352,12 +352,11 @@ public client class Repository {
     # + organizationId - Org ID
     # + recruiterId - Recruiter ID
     # + return - Job ID or Error
-    remote function createJob(string title, string description, string[] requiredSkills, string[] screeningQuestions, string organizationId, string recruiterId) returns string|error {
+    remote function createJob(string title, string description, string[] requiredSkills, string organizationId, string recruiterId) returns string|error {
         json payload = {
             "title": title,
             "description": description,
             "required_skills": requiredSkills,
-            "screening_questions": screeningQuestions,
             "organization_id": organizationId,
             "recruiter_id": recruiterId
         };
@@ -438,4 +437,28 @@ public client class Repository {
         return <json[]>body;
     }
 
+
+
+    remote function createJobQuestion(string jobId, string organizationId, string questionText, string questionType, int orderIndex, boolean isRequired) returns error? {
+        json payload = {
+            "job_id": jobId,
+            "organization_id": organizationId,
+            "question_text": questionText,
+            "question_type": questionType,
+            "order_index": orderIndex,
+            "is_required": isRequired
+        };
+
+        // This call is now valid because it is inside the class using 'self'
+        http:Response response = check self.httpClient->post("/rest/v1/job_questions", payload, headers = self.headers);
+
+        if response.statusCode >= 300 {
+            json errorBody = check response.getJsonPayload();
+            return error("Supabase Error: " + errorBody.toString());
+        }
+        return ();
+    }
+
 }
+
+
