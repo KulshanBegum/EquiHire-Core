@@ -60,6 +60,14 @@ export default function Questions() {
             return;
         }
 
+        // 1. Find the selected job object to get its organization_id
+        const selectedJob = jobs.find(j => j.id === selectedJobId);
+
+        if (!selectedJob) {
+            setError("Job details not found.");
+            return;
+        }
+
         if (questions.length >= 10) {
             setError("Maximum 10 questions allowed per job.");
             return;
@@ -74,16 +82,19 @@ export default function Questions() {
 
         const keywords = keywordsInput.split(",").map(k => k.trim()).filter(k => k);
 
+        // 2. Build the payload including organization_id
         const newQuestion = {
             jobId: selectedJobId,
+            organizationId: selectedJob.organization_id, // Added this line
             questionText,
             sampleAnswer,
             keywords,
-            questionType
+            questionType,
+            sortOrder: questions.length + 1 // Keeps the order 1-10
         };
 
         try {
-            // Note: API wrapper expects an array
+            // API wrapper expects an array
             await API.createJobQuestions([newQuestion]);
 
             // Refresh list
@@ -94,9 +105,10 @@ export default function Questions() {
             setSampleAnswer("");
             setKeywordsInput("");
             setQuestionType("paragraph");
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            setError("Failed to add question.");
+            // If the database trigger blocks the 11th question, it will show here
+            setError(err.message || "Failed to add question.");
         } finally {
             setIsSubmitting(false);
         }
@@ -168,8 +180,8 @@ export default function Questions() {
                                                 <div className="flex-1 space-y-2">
                                                     <div className="flex items-center gap-2 mb-1">
                                                         <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors uppercase ${q.questionType === 'code'
-                                                                ? 'bg-gray-900 text-white border-gray-700'
-                                                                : 'bg-white text-gray-600 border-gray-200'
+                                                            ? 'bg-gray-900 text-white border-gray-700'
+                                                            : 'bg-white text-gray-600 border-gray-200'
                                                             }`}>
                                                             {q.questionType === 'code' ? <Terminal className="w-3 h-3 mr-1" /> : <FileText className="w-3 h-3 mr-1" />}
                                                             {q.questionType}
