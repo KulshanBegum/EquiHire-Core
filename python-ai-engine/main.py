@@ -218,6 +218,44 @@ async def evaluate_answer(payload: EvaluationRequest):
         logger.error(f"Gemini Evaluation Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class RejectionEmailRequest(BaseModel):
+    candidate_name: str
+    job_title: str
+    summary_feedback: str
+
+class RejectionEmailResponse(BaseModel):
+    email_body: str
+
+@app.post("/generate/rejection-email", response_model=RejectionEmailResponse)
+async def generate_rejection_email(payload: RejectionEmailRequest):
+    """
+    Generates a polite, constructive rejection email.
+    """
+    logger.info(f"Generating rejection email for {payload.candidate_name}")
+    try:
+        model = get_gemini_model()
+        prompt = f"""
+        Write a polite and professional rejection email for a candidate who applied for a job.
+        
+        Candidate Name: {payload.candidate_name}
+        Job Title: {payload.job_title}
+        Feedback to include (constructive): {payload.summary_feedback}
+        
+        The email should thank them for their time, explain they were not selected for this role, and provide the constructive feedback gracefully. Do not include subject line, just the HTML body for the email. Use proper HTML tags (<p>, <br>, etc.). Keep the tone encouraging.
+        """
+        response = model.generate_content(prompt)
+        html_body = response.text.strip()
+        if html_body.startswith("```html"):
+            html_body = html_body[7:]
+        if html_body.endswith("```"):
+            html_body = html_body[:-3]
+
+        return RejectionEmailResponse(email_body=html_body.strip())
+    except Exception as e:
+        logger.error(f"Gemini Email Gen Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/reveal/{candidate_id}", response_model=RevealResponse)
 async def reveal_candidate(candidate_id: str):
     """

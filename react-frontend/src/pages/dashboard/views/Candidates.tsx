@@ -1,23 +1,38 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Lock, Unlock, Clock, FileText, ChevronRight, XCircle } from "lucide-react";
+import { Lock, Unlock, Clock, FileText, ChevronRight, XCircle, Settings2, Loader2 } from "lucide-react";
 
-// Mock Data
-const MOCK_CANDIDATES = [
-    { id: 1, role: "Senior Backend Engineer", score: 85, status: "pending", date: "2023-10-25", seen: false, stage: "Interview Completed" },
-    { id: 2, role: "Frontend Developer", score: 92, status: "accepted", name: "Sarah Jenkins", date: "2023-10-24", seen: true, stage: "Offer Sent" },
-    { id: 3, role: "DevOps Engineer", score: 64, status: "rejected", date: "2023-10-23", seen: true, stage: "Screening" },
-    { id: 4, role: "Senior Backend Engineer", score: 78, status: "pending", date: "2023-10-22", seen: false, stage: "Interview Completed" },
-    { id: 5, role: "Product Manager", score: 88, status: "accepted", name: "David Chen", date: "2023-10-20", seen: true, stage: "Hired" },
-    { id: 6, role: "QA Engineer", score: 0, status: "scheduled", date: "2023-10-26", seen: false, stage: "Scheduled" },
-];
+// Organization ID from Auth/Context normally. Hardcoding for demo purposes
+const ORGANIZATION_ID = "04b66df8-12cd-4384-8848-3a99252a1aa0";
 
 export default function CandidateManager() {
     const [statusFilter, setStatusFilter] = useState("all");
     const [activityFilter, setActivityFilter] = useState("all"); // all, seen, unseen
-    const [candidates, setCandidates] = useState(MOCK_CANDIDATES);
+    const [candidates, setCandidates] = useState<any[]>([]);
     const [selectedCandidate, setSelectedCandidate] = useState<any>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [threshold, setThreshold] = useState<number>(70);
+    const [isProcessing, setIsProcessing] = useState(false);
+
+    useEffect(() => {
+        fetchCandidates();
+    }, []);
+
+    const fetchCandidates = async () => {
+        setIsLoading(true);
+        try {
+            const res = await fetch(`http://localhost:9090/api/organizations/${ORGANIZATION_ID}/candidates`);
+            if (res.ok) {
+                const data = await res.json();
+                setCandidates(data);
+            }
+        } catch (error) {
+            console.error("Failed to fetch candidates:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const filteredCandidates = candidates.filter(c => {
         const matchesStatus = statusFilter === "all" || c.status === statusFilter;
@@ -25,13 +40,33 @@ export default function CandidateManager() {
         return matchesStatus && matchesActivity;
     });
 
-    const markAsSeen = (id: number) => {
-        setCandidates(candidates.map(c => c.id === id ? { ...c, seen: true } : c));
+    const markAsSeen = (candidateId: string) => {
+        setCandidates(candidates.map(c => c.candidateId === candidateId ? { ...c, seen: true } : c));
     };
 
     const handleViewDetails = (candidate: any) => {
-        markAsSeen(candidate.id);
+        markAsSeen(candidate.candidateId);
         setSelectedCandidate(candidate);
+    };
+
+    const handleApplyDecision = async (candidateId: string) => {
+        setIsProcessing(true);
+        try {
+            const res = await fetch(`http://localhost:9090/api/candidates/${candidateId}/decide`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ threshold })
+            });
+            if (res.ok) {
+                // Refresh list
+                fetchCandidates();
+                setSelectedCandidate(null);
+            }
+        } catch (error) {
+            console.error("Decision failed:", error);
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     const getStatusColor = (status: string) => {
@@ -68,6 +103,18 @@ export default function CandidateManager() {
                             <option value="rejected">Rejected</option>
                             <option value="scheduled">Scheduled</option>
                         </select>
+                        <div className="flex items-center space-x-2 bg-white border border-gray-200 rounded-md px-3">
+                            <Settings2 className="w-4 h-4 text-gray-400" />
+                            <span className="text-sm text-gray-500 font-medium">Auto-Pass Threshold:</span>
+                            <input
+                                type="number"
+                                min="0" max="100"
+                                value={threshold}
+                                onChange={e => setThreshold(Number(e.target.value))}
+                                className="w-14 text-sm font-bold text-[#FF7300] focus:outline-none bg-transparent"
+                            />
+                            <span className="text-sm font-bold text-gray-400">%</span>
+                        </div>
                     </div>
                 </div>
 
@@ -84,10 +131,17 @@ export default function CandidateManager() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {filteredCandidates.map((c) => (
+                                {isLoading ? (
+                                    <tr>
+                                        <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                                            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-[#FF7300]" />
+                                            Loading candidates...
+                                        </td>
+                                    </tr>
+                                ) : filteredCandidates.map((c) => (
                                     <tr
-                                        key={c.id}
-                                        className={`hover:bg-gray-50/80 transition-colors cursor-pointer ${selectedCandidate?.id === c.id ? 'bg-blue-50/50' : ''}`}
+                                        key={c.candidateId}
+                                        className={`hover:bg-gray-50/80 transition-colors cursor-pointer ${selectedCandidate?.candidateId === c.candidateId ? 'bg-blue-50/50' : ''}`}
                                         onClick={() => handleViewDetails(c)}
                                     >
                                         <td className="px-6 py-4">
@@ -97,13 +151,13 @@ export default function CandidateManager() {
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <span className={`${c.status === 'accepted' ? 'text-gray-900' : 'text-gray-500 font-mono tracking-wider'} ${!c.seen ? 'font-bold text-gray-900' : ''}`}>
-                                                        {c.status === 'accepted' ? c.name : `CANDIDATE #${c.id.toString().padStart(4, '0')}`}
+                                                        {c.candidateName}
                                                     </span>
                                                     {!c.seen && <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wide">New Update</span>}
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-gray-600">{c.role}</td>
+                                        <td className="px-6 py-4 text-gray-600">{c.jobTitle}</td>
                                         <td className="px-6 py-4">
                                             {c.score > 0 ? (
                                                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${c.score >= 80 ? 'bg-green-100 text-green-800' :
@@ -154,27 +208,45 @@ export default function CandidateManager() {
                                     )}
                                 </div>
                                 <CardTitle className="text-center">
-                                    {selectedCandidate.status === 'accepted' ? selectedCandidate.name : `CANDIDATE #${selectedCandidate.id.toString().padStart(4, '0')}`}
+                                    {selectedCandidate.candidateName}
                                 </CardTitle>
                                 <CardDescription className="text-center font-mono text-xs mt-1 text-gray-500">
-                                    ID: {selectedCandidate.id} • {selectedCandidate.role}
+                                    ID: {selectedCandidate.candidateId.split('-')[0]} • {selectedCandidate.jobTitle}
                                 </CardDescription>
                             </div>
                         </CardHeader>
                         <CardContent className="pt-6 space-y-6">
-                            {/* Score Card */}
+                            {/* Overall Score Component */}
                             <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
                                 <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs font-semibold uppercase text-gray-500">AI Compatibility Score</span>
+                                    <span className="text-xs font-semibold uppercase text-gray-500">Overall AI Match</span>
                                     {selectedCandidate.score > 0 && <span className="font-bold text-lg text-gray-900">{selectedCandidate.score}%</span>}
                                 </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
                                     <div
-                                        className="bg-[#FF7300] h-2 rounded-full transition-all duration-500"
+                                        className={`h-2 rounded-full transition-all duration-500 ${selectedCandidate.score >= threshold ? 'bg-[#FF7300]' : 'bg-red-400'}`}
                                         style={{ width: `${selectedCandidate.score}%` }}
                                     ></div>
                                 </div>
-                                {selectedCandidate.score === 0 && <p className="text-xs text-gray-400 mt-2 italic">Interview pending or not graded.</p>}
+
+                                {selectedCandidate.score > 0 ? (
+                                    <div className="space-y-2 mt-2 pt-3 border-t border-gray-200 border-dashed">
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-gray-500">CV / Resume</span>
+                                            <span className="font-medium text-gray-700">{selectedCandidate.cvScore}%</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-gray-500">Required Skills</span>
+                                            <span className="font-medium text-gray-700">{selectedCandidate.skillsScore}%</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs">
+                                            <span className="text-gray-500">Technical Interview</span>
+                                            <span className="font-medium text-gray-700">{selectedCandidate.interviewScore}%</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-gray-400 italic">Interview pending or not graded.</p>
+                                )}
                             </div>
 
                             {/* Lifecycle Stage */}
@@ -186,7 +258,7 @@ export default function CandidateManager() {
                                     <div className="relative">
                                         <div className="absolute -left-[21px] top-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white ring-2 ring-gray-50"></div>
                                         <p className="text-sm font-medium text-gray-900">Application Received</p>
-                                        <p className="text-xs text-gray-500">{selectedCandidate.date}</p>
+                                        <p className="text-xs text-gray-500">{new Date(selectedCandidate.appliedDate).toLocaleDateString()}</p>
                                     </div>
                                     <div className="relative">
                                         <div className={`absolute -left-[21px] top-1 w-3 h-3 rounded-full border-2 border-white ring-2 ring-gray-50 ${selectedCandidate.score > 0 ? 'bg-green-500' : 'bg-gray-300'}`}></div>
@@ -205,7 +277,17 @@ export default function CandidateManager() {
                                 </div>
                             </div>
 
-                            <div className="pt-4 border-t border-gray-100">
+                            <div className="pt-4 border-t border-gray-100 flex flex-col gap-2">
+                                {selectedCandidate.status === 'pending' && selectedCandidate.score > 0 && (
+                                    <Button
+                                        className={`w-full ${selectedCandidate.score >= threshold ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}`}
+                                        onClick={() => handleApplyDecision(selectedCandidate.candidateId)}
+                                        disabled={isProcessing}
+                                    >
+                                        {isProcessing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Lock className="w-4 h-4 mr-2" />}
+                                        {selectedCandidate.score >= threshold ? 'Accept & Reveal Name' : 'Reject & Anonymize'} (Threshold {threshold}%)
+                                    </Button>
+                                )}
                                 <Button className="w-full" variant="outline">
                                     <FileText className="w-4 h-4 mr-2" /> View Full Transcript
                                 </Button>

@@ -197,14 +197,59 @@ public type QuestionPayload record {
 # + questionText - The actual question string
 # + sampleAnswer - Sample answer for the question
 # + keywords - Keywords expected in the answer
-# + questionType - Type of input (paragraph, code)
+# + type - Type of input (paragraph, code)
 public type QuestionItem record {
     string? id = ();
     string jobId;
-    string organizationId; // Removed '?' to make it a mandatory string
     string questionText;
     string sampleAnswer;
     string[] keywords;
-    string questionType = "paragraph";
-    int sortOrder = 1;
+    string 'type = "paragraph";
+};
+
+# Represents a unified candidate record for the dashboard.
+#
+# + candidateId - Candidate ID
+# + jobTitle - Applied job title
+# + candidateName - Name (masked if pending)
+# + status - Current status (e.g., "pending", "accepted")
+# + score - Overall AI evaluation score
+# + appliedDate - Date of application
+# + seen - Whether the recruiter has viewed this update
+# + cvScore - CV component score
+# + skillsScore - Skills component score
+# + interviewScore - Interview component score
+# + summaryFeedback - AI summary feedback for the decision
+public type CandidateResponse record {
+    string candidateId;
+    string jobTitle;
+    string candidateName;
+    string status;
+    decimal score;
+    string appliedDate;
+    boolean seen = false;
+    decimal cvScore = 0d;
+    decimal skillsScore = 0d;
+    decimal interviewScore = 0d;
+    string? summaryFeedback = ();
+};
+
+# Request payload to process a pass/fail decision.
+#
+# + threshold - The required passing score (e.g. 70.0)
+public type DecisionRequest record {
+    decimal threshold;
+};
+
+# Response from a decision processing.
+#
+# + candidateId - Evaluated candidate ID
+# + pass - Passed or failed boolean
+# + emailSent - Was the automated email successfully sent
+# + message - Optional status message
+public type DecisionResponse record {
+    string candidateId;
+    boolean pass;
+    boolean emailSent;
+    string message;
 };
